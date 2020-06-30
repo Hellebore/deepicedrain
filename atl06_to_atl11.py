@@ -98,41 +98,7 @@ if not os.path.exists("ATL06_to_ATL11_Antarctica.sh"):
         f.writelines(writelines)
 
 
-# %% [markdown]
-# Now use [GNU parallel](https://www.gnu.org/software/parallel/parallel_tutorial.html) to run the script in parallel.
-# Will take about 1 week to run on 64 cores.
-#
-# Reference:
-#
-# - O. Tange (2018): GNU Parallel 2018, Mar 2018, ISBN 9781387509881, DOI https://doi.org/10.5281/zenodo.1146014
-
-# %%
-# !PYTHONPATH=`pwd` PYTHONWARNINGS="ignore" parallel -a ATL06_to_ATL11_Antarctica.sh --bar --resume-failed --results logdir --joblog log --jobs 64 > /dev/null
-
-# %%
-# df_log = pd.read_csv(filepath_or_buffer="log", sep="\t")
-# df_log.query(expr="Exitval > 0")
-
-# %% [markdown]
-# ## Convert from HDF5 to Zarr format
-#
-# For faster data access speeds!
-# We'll collect the data for each Reference Ground Track,
-# and store it inside a Zarr format,
-# specifically one that can be used by xarray.
-# See also http://xarray.pydata.org/en/v0.15.1/io.html#zarr.
-#
-# Grouping hierarchy:
-#   - Reference Ground Track (1-1387)
-#     - Orbital Segments (10, 11, 12)
-#       - Laser Pairs (pt1, pt2, pt3)
-#         - Attributes (longitude, latitude, h_corr, delta_time, etc)
-
-# %%
-# for atl11file in tqdm.tqdm(iterable=sorted(glob.glob("ATL11.001/*.h5"))):
-#     name = os.path.basename(p=os.path.splitext(p=atl11file)[0])
-
-max_cycles: int = max([int(f[-12:-11]) for f in glob.glob("ATL11.001/*.h5")])
+max_cycles: int = max(int(f[-12:-11]) for f in glob.glob("ATL11.001/*.h5"))
 print(f"{max_cycles} ICESat-2 cycles available")
 
 # %%
@@ -178,12 +144,8 @@ for rgt in tqdm.trange(1387):
     try:
         assert len(atl11files) == 3  # Should be 3 files for Orbital Segments 10,11,12
     except AssertionError:
-        if len(atl11files) == 2 and rgt + 1 in [208, 1036]:
-            pass
-        else:
+        if len(atl11files) != 2 or rgt + 1 not in [208, 1036]:
             raise
-    # Note ["ATL11.001/ATL11_014512_0206_03_v001.h5"] is missing pt2 and pt3 groups
-
     if atl11files:
         pattern: dict = intake.source.utils.reverse_format(
             format_string="ATL11.001/ATL11_{referencegroundtrack:4}{orbitalsegment:2}_{cycles:4}_{revision:2}_v{version:3}.h5",
@@ -251,7 +213,7 @@ for zarrfilepath, atl11files in tqdm.tqdm(iterable=atl11_dict.items()):
 # Do all the HDF5 to Zarr conversion! Should take about half an hour to run
 # Check conversion progress here, https://stackoverflow.com/a/37901797/6611055
 futures = [client.compute(store_task) for store_task in stores]
-for f in tqdm.tqdm(
+for _ in tqdm.tqdm(
     iterable=dask.distributed.as_completed(futures=futures), total=len(stores)
 ):
     pass

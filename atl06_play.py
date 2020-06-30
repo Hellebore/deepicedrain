@@ -66,20 +66,9 @@ logging.basicConfig(level=logging.WARNING)
 client = dask.distributed.Client(n_workers=10, threads_per_worker=1)
 client
 
-# %% [markdown]
-# ## Quick view
-#
-# Use our [intake catalog](https://intake.readthedocs.io/en/latest/catalog.html) to get some sample ATL06 data
-# (while making sure we have our Earthdata credentials set up properly),
-# and view it using [xarray](https://xarray.pydata.org) and [hvplot](https://hvplot.pyviz.org).
-
 # %%
 # Open the local intake data catalog file containing ICESat-2 stuff
 catalog = intake.open_catalog("deepicedrain/atlas_catalog.yaml")
-# or if the deepicedrain python package is installed, you can use either of the below:
-# catalog = deepicedrain.catalog
-# catalog = intake.cat.atlas_cat
-
 # %%
 try:
     netrc.netrc()
@@ -112,20 +101,12 @@ print(dataset)
 # )
 catalog.icesat2atl06.hvplot.quickview()
 
-# %% [markdown]
-# ## Data intake
-#
-# Pulling in all of the raw ATL06 data (HDF5 format) from the NSIDC servers via an intake catalog file.
-# Note that this will involve 100s if not 1000s of GBs of data, so make sure there's enough storage!!
-
 # %%
 # Download all ICESAT2 ATLAS hdf files from start to end date
 dates1 = pd.date_range(start="2018.10.14", end="2018.12.08")  # 1st batch
 dates2 = pd.date_range(start="2018.12.10", end="2019.06.26")  # 2nd batch
 dates3 = pd.date_range(start="2019.07.26", end="2020.04.04")  # 3rd batch
 dates = dates1.append(other=dates2).append(other=dates3)
-# dates = pd.date_range(start="2020.03.07", end="2020.04.04")  # custom batch
-
 # %%
 # Submit download jobs to Client
 futures = []
@@ -138,12 +119,9 @@ for date in dates:
 
 # %%
 # Check download progress here, https://stackoverflow.com/a/37901797/6611055
-responses = []
-for f in tqdm.tqdm(
+responses = [(f.result()) for f in tqdm.tqdm(
     iterable=dask.distributed.as_completed(futures=futures), total=len(futures)
-):
-    responses.append(f.result())
-
+)]
 # %%
 # In case of error, check which downloads are unfinished
 # Manually delete those folders and retry
@@ -164,14 +142,6 @@ except AssertionError:
         f"{len(unfinished)} download tasks are unfinished,"
         " please delete those folders and retry again!"
     )
-
-# %%
-
-# %% [markdown]
-# ## Exploratory data analysis on local files
-#
-# Now that we've downloaded a good chunk of data and cached them locally,
-# we can have some fun with visualizing the point clouds!
 
 # %%
 root_directory = os.path.dirname(
@@ -280,7 +250,7 @@ dataset_dict = {}
 for referencegroundtrack in list(crossing_dates_dict)[348:349]:
     # print(referencegroundtrack)
     filepaths = list(crossing_dates_dict[referencegroundtrack].values())
-    if len(filepaths) > 0:
+    if filepaths:
         dataset_dict[referencegroundtrack] = dask.delayed(obj=six_laser_beams)(
             filepaths=filepaths
         )
@@ -291,36 +261,6 @@ df = dataset_dict["0349"].compute()  # loads into a dask dataframe (lazy)
 
 # %%
 df
-
-# %%
-
-# %%
-# compute every referencegroundtrack, slow... though somewhat parallelized
-# dataset_dict = dask.compute(dataset_dict)[0]
-
-# %%
-# big dataframe containing data across all 1387 reference ground tracks!
-# bdf = dask.dataframe.concat(dfs=list(dataset_dict.values()))
-
-# %%
-# %% [raw]
-# # https://xarray.pydata.org/en/stable/combining.html#concatenate
-# # For all 6 lasers one one date ~~along one reference ground track~~,
-# # concatenate all points ~~from one dates~~ into one xr.Dataset
-# lasers = ["gt1l", "gt1r", "gt2l", "gt2r", "gt3l", "gt3r"]
-# da = xr.concat(
-#     objs=(
-#         catalog.icesat2atl06(laser=laser, referencegroundtrack=referencegroundtrack)
-#         .to_dask()
-#         for laser in lasers
-#     ),
-#     dim=pd.Index(data=lasers, name="laser")
-# )
-
-# %%
-
-# %% [markdown]
-# ## Plot ATL06 points!
 
 # %%
 # Convert dask.DataFrame to pd.DataFrame
@@ -345,9 +285,6 @@ dfs.hvplot.scatter(
     # width=800, height=500, colorbar=True
 )
 
-# %% [markdown]
-# ### Transform from EPSG:4326 (lat/lon) to EPSG:3031 (Antarctic Polar Stereographic)
-
 # %%
 dfs["x"], dfs["y"] = deepicedrain.lonlat_to_xy(
     longitude=dfs.longitude, latitude=dfs.latitude
@@ -369,14 +306,6 @@ dfs.hvplot.scatter(
 # %%
 # Plot cross section view
 dfs.hvplot.scatter(x="x", y="h_li", by="laser")
-
-# %%
-
-# %% [markdown]
-# ## Experimental Work-in-Progress stuff below
-
-# %% [markdown]
-# ### Old way of making a DEM grid surface from points
 
 # %%
 import scipy
